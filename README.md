@@ -1,4 +1,4 @@
-field_privacy
+Field Privacy
 =============
 
 Drupal Field Privacy Module
