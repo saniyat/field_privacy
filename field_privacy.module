@@ -1,0 +1,185 @@
+<?php
+
+/**
+ * @file
+ * Provides options for fields to override visibility.
+ */
+
+/**
+ * Implements hook_permission().
+ */
+function field_privacy_permission() {
+  return array(
+    'access private fields' => array(
+      'title' => t('Access private fields'),
+      'description' => t('Allows a user to access private fields.'),
+    ),
+  );
+}
+
+/**
+ * Implements hook_form_FORM_ID_alter().
+ *
+ * Add a checkbox for the content type instance settings on the 'Edit field instance' form.
+ *
+ * @see hook_form_field_ui_field_edit_form_alter()
+ */
+function field_privacy_form_field_ui_field_edit_form_alter(&$form, &$form_state, $form_id) {
+  $instance = $form['#instance'];
+  // FIXME: Is it possible to store this setting to the $instance['settings']?
+  // Maybe. @see hook_field_info_alter().
+  if ($instance['entity_type'] == 'node') {
+    $form['instance']['settings']['field_privacy'] = array(
+      '#type' => 'checkbox',
+      '#title' => t('Hide this field\'s value by making it private'),
+      '#default_value' => _field_privacy_field($instance['field_id']),
+      // Display just below the 'required' checkbox.
+      '#weight' => $form['instance']['required']['#weight'] + .1,
+    );
+    // Make sure our submit handler is the first one.
+    array_unshift($form['#submit'], 'field_privacy_form_field_ui_field_edit_form_alter_submit');
+  }
+}
+
+/**
+* Stores if a user field's can be selected as private.
+*/
+function field_privacy_form_field_ui_field_edit_form_alter_submit($form, &$form_state) {
+  db_merge('field_privacy_field')
+    ->key(array('fid' => $form['#instance']['field_id']))
+    ->fields(array('privacy' => $form_state['values']['instance']['settings']['field_privacy']))
+    ->execute();
+  unset($form_state['values']['instance']['settings']['field_privacy']);
+}
+
+/**
+* Returns if a field should have a 'private' checkbox or not.
+*
+* @param $fid
+* Field ID.
+* @return bool
+* TRUE if the field should have a 'private' checkbox.
+*/
+function _field_privacy_field($fid) {
+  return (bool) db_select('field_privacy_field', 'ufpf')
+    ->fields('ufpf', array('privacy'))
+    ->condition('fid', $fid)
+    ->execute()
+    ->fetchField();
+}
+
+/**
+ * Returns if a field value should be kept private.
+ *
+ * @param $fid
+ *   Field ID.
+ * @param $uid
+ *   User ID.
+ * @return bool
+ *   TRUE if the field value should be kept private.
+ */
+function _field_privacy_value($fid, $uid) {
+  return (bool) db_select('field_privacy_value', 'ufpv')
+    ->fields('ufpv', array('private'))
+    ->condition('fid', $fid)
+    ->condition('uid', $uid)
+    ->execute()
+    ->fetchField();
+}
+
+/**
+* Implements hook_field_delete_instance().
+*
+* Removes a field's privacy settings upon deletion of the field instance.
+*/
+function field_privacy_field_delete_instance($instance) {
+  db_delete('field_privacy_field')
+    ->condition('fid', $instance['field_id'])
+    ->execute();
+  
+  db_delete('field_privacy_value')
+   ->condition('fid', $instance['field_id'])
+   ->execute();
+}
+
+/**
+ * Implements hook_field_attach_form().
+ *
+ * Adds the 'private' checkbox to user fields where the field instance's
+ * settings demand it.
+ */
+function field_privacy_field_attach_form($entity_type, $entity, &$form, &$form_state, $langcode) {
+  if ($entity_type == 'node') {
+    $field_privacy = FALSE;
+    foreach (field_info_instances('node', $entity->type) as $instance) {
+      if (_field_privacy_field($instance['field_id'])) {
+        $field_name = $instance['field_name'];
+        $form[$field_name]['field_privacy'] = array(
+          '#type' => 'checkbox',
+          '#title' => t('Private Field'),
+          '#description' => t('Tick this if you want to hide this value from non-administrators.'),
+          '#default_value' => _field_privacy_value($instance['field_id'], $form['uid']['#value']),
+        );
+        $form[$field_name]['#field_privacy_fid'] = $instance['field_id'];
+        $user_field_privacy = TRUE;
+      }
+    }
+    // There's a little problem here. The checkbox (form element) needs to be
+    // added _there_ in the $form array, to have it right after/below the
+    // field it belongs to. Adding our own submit callback here only if it's
+    // really needed, ie. when we do have a field that should have a 'private'
+    // checkbox besides it.
+    if ($user_field_privacy) {
+      if (!isset($form['#submit'])) {
+        $form['#submit'] = array();
+      }
+      $form['#submit'][] = 'field_privacy_field_attach_form_submit';
+    }
+  }
+}
+
+/**
+ * Stores if a field's value should be kept private.
+ *
+ * @see field_privacy_field_attach_form
+ */
+function field_privacy_field_attach_form_submit($form, &$form_state) {
+  foreach (element_children($form) as $field_name) {
+    if (isset($form[$field_name]['#field_privacy_fid'])) {
+      db_merge('field_privacy_value')
+        ->key(array(
+          'fid' => $form[$field_name]['#field_privacy_fid'],
+          'uid' => $form['uid']['#value'],
+        ))
+        ->fields(array('private' => $form_state['values'][$field_name]['field_privacy']))
+        ->execute();
+      unset($form_state['values'][$field_name]['field_privacy']);
+    }
+  }
+}
+
+/**
+ * Implements hook_field_access().
+ */
+function field_privacy_field_access($op, $field, $entity_type, $entity, $account) {
+  if ($entity_type == 'node') {
+    switch ($op) {
+    case 'view':
+      if (_field_privacy_field($field['id'])) {
+        // Grant access if this permission is granted to the viewer.
+        if (user_access('access private fields')) {
+          return TRUE;
+        }
+        // If the field is to be kept private, only grant access if the viewer
+        // has the same uid as the $user being viewed.
+        $uid = isset($entity->uid) ? $entity->uid : 0;
+        if (_field_privacy_value($field['id'], $uid)) {
+          return (bool) ($uid == $account->uid);
+        }
+        // If the field is not to be kept private, grant access.
+        return TRUE;
+      }
+      break;
+    }
+  }
+}
