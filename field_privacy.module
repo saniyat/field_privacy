@@ -28,17 +28,15 @@ function field_privacy_form_field_ui_field_edit_form_alter(&$form, &$form_state,
   $instance = $form['#instance'];
   // FIXME: Is it possible to store this setting to the $instance['settings']?
   // Maybe. @see hook_field_info_alter().
-  if ($instance['entity_type'] == 'node') {
-    $form['instance']['settings']['field_privacy'] = array(
-      '#type' => 'checkbox',
-      '#title' => t('Hide this field\'s value by making it private'),
-      '#default_value' => _field_privacy_field($instance['field_id']),
-      // Display just below the 'required' checkbox.
-      '#weight' => $form['instance']['required']['#weight'] + .1,
-    );
-    // Make sure our submit handler is the first one.
-    array_unshift($form['#submit'], 'field_privacy_form_field_ui_field_edit_form_alter_submit');
-  }
+  $form['instance']['settings']['field_privacy'] = array(
+    '#type' => 'checkbox',
+    '#title' => t('Hide this field\'s value by making it private'),
+    '#default_value' => _field_privacy_field($instance['field_id']),
+    // Display just below the 'required' checkbox.
+    '#weight' => $form['instance']['required']['#weight'] + .1,
+  );
+  // Make sure our submit handler is the first one.
+  array_unshift($form['#submit'], 'field_privacy_form_field_ui_field_edit_form_alter_submit');
 }
 
 /**
@@ -109,32 +107,30 @@ function field_privacy_field_delete_instance($instance) {
  * settings demand it.
  */
 function field_privacy_field_attach_form($entity_type, $entity, &$form, &$form_state, $langcode) {
-  if ($entity_type == 'node') {
-    $field_privacy = FALSE;
-    foreach (field_info_instances('node', $entity->type) as $instance) {
-      if (_field_privacy_field($instance['field_id'])) {
-        $field_name = $instance['field_name'];
-        $form[$field_name]['field_privacy'] = array(
-          '#type' => 'checkbox',
-          '#title' => t('Private Field'),
-          '#description' => t('Tick this if you want to hide this value from non-administrators.'),
-          '#default_value' => _field_privacy_value($instance['field_id'], $form['uid']['#value']),
-        );
-        $form[$field_name]['#field_privacy_fid'] = $instance['field_id'];
-        $user_field_privacy = TRUE;
-      }
+  $field_privacy = FALSE;
+  foreach (field_info_instances('node', $entity->type) as $instance) {
+    if (_field_privacy_field($instance['field_id'])) {
+      $field_name = $instance['field_name'];
+      $form[$field_name]['field_privacy'] = array(
+        '#type' => 'checkbox',
+        '#title' => t('Private Field'),
+        '#description' => t('Tick this if you want to hide this value from non-administrators.'),
+        '#default_value' => _field_privacy_value($instance['field_id'], $form['uid']['#value']),
+      );
+      $form[$field_name]['#field_privacy_fid'] = $instance['field_id'];
+      $user_field_privacy = TRUE;
     }
-    // There's a little problem here. The checkbox (form element) needs to be
-    // added _there_ in the $form array, to have it right after/below the
-    // field it belongs to. Adding our own submit callback here only if it's
-    // really needed, ie. when we do have a field that should have a 'private'
-    // checkbox besides it.
-    if ($user_field_privacy) {
-      if (!isset($form['#submit'])) {
-        $form['#submit'] = array();
-      }
-      $form['#submit'][] = 'field_privacy_field_attach_form_submit';
+  }
+  // There's a little problem here. The checkbox (form element) needs to be
+  // added _there_ in the $form array, to have it right after/below the
+  // field it belongs to. Adding our own submit callback here only if it's
+  // really needed, ie. when we do have a field that should have a 'private'
+  // checkbox besides it.
+  if ($user_field_privacy) {
+    if (!isset($form['#submit'])) {
+      $form['#submit'] = array();
     }
+    $form['#submit'][] = 'field_privacy_field_attach_form_submit';
   }
 }
 
@@ -162,24 +158,22 @@ function field_privacy_field_attach_form_submit($form, &$form_state) {
  * Implements hook_field_access().
  */
 function field_privacy_field_access($op, $field, $entity_type, $entity, $account) {
-  if ($entity_type == 'node') {
-    switch ($op) {
-    case 'view':
-      if (_field_privacy_field($field['id'])) {
-        // Grant access if this permission is granted to the viewer.
-        if (user_access('access private fields')) {
-          return TRUE;
-        }
-        // If the field is to be kept private, only grant access if the viewer
-        // has the same uid as the $user being viewed.
-        $uid = isset($entity->uid) ? $entity->uid : 0;
-        if (_field_privacy_value($field['id'], $uid)) {
-          return (bool) ($uid == $account->uid);
-        }
-        // If the field is not to be kept private, grant access.
+  switch ($op) {
+  case 'view':
+    if (_field_privacy_field($field['id'])) {
+      // Grant access if this permission is granted to the viewer.
+      if (user_access('access private fields')) {
         return TRUE;
       }
-      break;
+      // If the field is to be kept private, only grant access if the viewer
+      // has the same uid as the $user being viewed.
+      $uid = isset($entity->uid) ? $entity->uid : 0;
+      if (_field_privacy_value($field['id'], $uid)) {
+        return (bool) ($uid == $account->uid);
+      }
+      // If the field is not to be kept private, grant access.
+      return TRUE;
     }
+    break;
   }
 }
