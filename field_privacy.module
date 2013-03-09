@@ -126,7 +126,7 @@ function field_privacy_field_attach_form($entity_type, $entity, &$form, &$form_s
   // field it belongs to. Adding our own submit callback here only if it's
   // really needed, ie. when we do have a field that should have a 'private'
   // checkbox besides it.
-  if ($user_field_privacy) {
+  if ($field_privacy) {
     if (!isset($form['#submit'])) {
       $form['#submit'] = array();
     }
