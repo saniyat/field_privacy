@@ -108,17 +108,20 @@ function field_privacy_field_delete_instance($instance) {
  */
 function field_privacy_field_attach_form($entity_type, $entity, &$form, &$form_state, $langcode) {
   $field_privacy = FALSE;
-  foreach (field_info_instances('node', $entity->type) as $instance) {
-    if (_field_privacy_field($instance['field_id'])) {
-      $field_name = $instance['field_name'];
-      $form[$field_name]['field_privacy'] = array(
-        '#type' => 'checkbox',
-        '#title' => t('Private Field'),
-        '#description' => t('Tick this if you want to hide this value from non-administrators.'),
-        '#default_value' => _field_privacy_value($instance['field_id'], $form['uid']['#value']),
-      );
-      $form[$field_name]['#field_privacy_fid'] = $instance['field_id'];
-      $user_field_privacy = TRUE;
+  if($entity_type == 'user' or $entity_type == 'node') {
+    $sub_entity_type = ($entity_type == 'user') ? 'user' : $entity->type;
+    foreach (field_info_instances($entity_type, $sub_entity_type) as $instance) {
+      if (_field_privacy_field($instance['field_id'])) {
+        $field_name = $instance['field_name'];
+        $form[$field_name]['field_privacy'] = array(
+          '#type' => 'checkbox',
+          '#title' => t('Private Field'),
+          '#description' => t('Tick this if you want to hide this value from non-administrators.'),
+          '#default_value' => _field_privacy_value($instance['field_id'], $form['uid']['#value']),
+        );
+        $form[$field_name]['#field_privacy_fid'] = $instance['field_id'];
+        $user_field_privacy = TRUE;
+      }
     }
   }
   // There's a little problem here. The checkbox (form element) needs to be
